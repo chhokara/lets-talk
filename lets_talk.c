@@ -20,55 +20,86 @@ struct thread_params {
 };
 
 void *receive_msg(void * ptr) {
-    // struct thread_params *params = ptr;
-    // printf("%d\n", List_count(params->receiving_list));
-    // printf("%d\n", atoi(params->argv[1]));
-    // int sockfd;
-    // char buffer[1024];
-    // struct sockaddr_in servaddr, cliaddr;
+    struct thread_params *params = ptr;
+    do {
+        int sockfd;
+        char buff[1024];
+        struct sockaddr_in servaddr, cliaddr;
 
-    // // Creating socket file descriptor 
-    // if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
-    //     perror("socket creation failed"); 
-    //     exit(EXIT_FAILURE); 
-    // } 
-      
-    // memset(&servaddr, 0, sizeof(servaddr)); 
-    // memset(&cliaddr, 0, sizeof(cliaddr)); 
+        // Creating socket file descriptor 
+        if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
+            perror("socket creation failed"); 
+            exit(EXIT_FAILURE); 
+        } 
+        
+        memset(&servaddr, 0, sizeof(servaddr)); 
+        memset(&cliaddr, 0, sizeof(cliaddr)); 
 
-    // // Filling server information 
-    // servaddr.sin_family    = AF_INET; // IPv4 
-    // servaddr.sin_addr.s_addr = INADDR_ANY; 
-    // servaddr.sin_port = htons(atoi(params->argv[1])); 
-      
-    // // Bind the socket with the server address 
-    // if ( bind(sockfd, (const struct sockaddr *)&servaddr,  
-    //         sizeof(servaddr)) < 0 ) 
-    // { 
-    //     perror("bind failed"); 
-    //     exit(EXIT_FAILURE); 
-    // } 
-      
-    // int len, n; 
-  
-    // len = sizeof(cliaddr);  //len is value/resuslt 
-  
-    // n = recvfrom(sockfd, (char *)buffer, 1024,  
-    //             MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
-    //             &len); 
-    // buffer[n] = '\0'; 
+        // Filling server information 
+        servaddr.sin_family    = AF_INET; // IPv4 
+        servaddr.sin_addr.s_addr = INADDR_ANY; 
+        servaddr.sin_port = htons(atoi(params->argv[3])); 
+        
+        // Bind the socket with the server address 
+        if ( bind(sockfd, (const struct sockaddr *)&servaddr,  
+                sizeof(servaddr)) < 0 ) 
+        { 
+            perror("bind failed"); 
+            exit(EXIT_FAILURE); 
+        } 
+        
+        int len, n; 
+    
+        len = sizeof(cliaddr);  //len is value/resuslt 
+    
+        n = recvfrom(sockfd, (char *)buff, 1024,  
+                    MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
+                    &len); 
+        buff[n] = '\0'; 
 
-    // List_add(params->receiving_list, (char *)buffer);
-    printf("receive\n");
+        List_add(params->receiving_list, (char *)buff);
+    } while(true);
+    
+    // printf("receiving thread\n");
 }
 void *print_msg(void * ptr) {
-    printf("print\n");
+    struct thread_params *params = ptr;
+    do {
+        if(List_count(params->receiving_list)) {
+            char * msg = List_remove(params->receiving_list);
+            printf("$s", msg);
+        }
+    }while(true);
+    
 }
 void *send_msg(void * ptr) {
     struct thread_params *params = ptr;
     do {
-        char * msg = List_remove(params->sending_list);
-        printf("%s", msg);
+        if(List_count(params->sending_list)) {
+            char * msg = List_remove(params->sending_list);
+            int sockfd;  
+            struct sockaddr_in servaddr; 
+        
+            // Creating socket file descriptor 
+            if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
+                perror("socket creation failed"); 
+                exit(EXIT_FAILURE); 
+            } 
+        
+            memset(&servaddr, 0, sizeof(servaddr)); 
+            
+            // Filling server information 
+            servaddr.sin_family = AF_INET; 
+            servaddr.sin_port = htons(atoi(params->argv[1])); 
+            servaddr.sin_addr.s_addr = INADDR_ANY; 
+            
+            sendto(sockfd, (const char *)msg, strlen(msg), 
+                MSG_CONFIRM, (const struct sockaddr *) &servaddr,  
+                    sizeof(servaddr)); 
+        
+            close(sockfd); 
+        }
+       
     } while(true);
     
 }
