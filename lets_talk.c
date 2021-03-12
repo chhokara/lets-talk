@@ -9,122 +9,120 @@
 #include <netinet/in.h> 
 #include "list.c"
 #include "list.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#define AI_PASSIVE 0x0001
 
-
+pthread_mutex_t Mutex = PTHREAD_MUTEX_INITIALIZER;
 char buffer[1000];
 struct thread_params {
+    struct sockaddr * receiverinfo;
+    struct sockaddr * senderinfo;
     List * sending_list;
     List * receiving_list;
-    int argc;
-    char ** argv;
 };
 
 void *receive_msg(void * ptr) {
     struct thread_params *params = ptr;
     do {
-        int sockfd;
+        pthread_mutex_lock(&Mutex);
         char buff[1024];
-        struct sockaddr_in servaddr, cliaddr;
-
-        // Creating socket file descriptor 
-        if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
-            perror("socket creation failed"); 
-            exit(EXIT_FAILURE); 
-        } 
-        
-        memset(&servaddr, 0, sizeof(servaddr)); 
-        memset(&cliaddr, 0, sizeof(cliaddr)); 
-
-        // Filling server information 
-        servaddr.sin_family    = AF_INET; // IPv4 
-        servaddr.sin_addr.s_addr = INADDR_ANY; 
-        servaddr.sin_port = htons(atoi(params->argv[3])); 
-        
-        // Bind the socket with the server address 
-        if ( bind(sockfd, (const struct sockaddr *)&servaddr,  
-                sizeof(servaddr)) < 0 ) 
-        { 
-            perror("bind failed"); 
-            exit(EXIT_FAILURE); 
-        } 
-        
-        int len, n; 
-    
-        len = sizeof(cliaddr);  //len is value/resuslt 
-    
-        n = recvfrom(sockfd, (char *)buff, 1024,  
-                    MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
+        int n;
+        socklen_t len; 
+  
+        len = sizeof(params->cliaddr);  //len is value/resuslt 
+  
+        n = recvfrom(params->clisockfd, (char *)buff, 1024,  
+                MSG_WAITALL, ( struct sockaddr *) &(params->cliaddr), 
                     &len); 
         buff[n] = '\0'; 
-
         List_add(params->receiving_list, (char *)buff);
-    } while(true);
+        pthread_mutex_unlock(&Mutex);
+    } while(1);
     
     // printf("receiving thread\n");
 }
 void *print_msg(void * ptr) {
     struct thread_params *params = ptr;
     do {
+        pthread_mutex_lock(&Mutex);
         if(List_count(params->receiving_list)) {
             char * msg = List_remove(params->receiving_list);
-            printf("$s", msg);
+            printf("%s", msg);
         }
-    }while(true);
+        pthread_mutex_unlock(&Mutex);
+    }while(1);
     
 }
 void *send_msg(void * ptr) {
     struct thread_params *params = ptr;
     do {
+        pthread_mutex_lock(&Mutex);
         if(List_count(params->sending_list)) {
             char * msg = List_remove(params->sending_list);
-            int sockfd;  
-            struct sockaddr_in servaddr; 
-        
-            // Creating socket file descriptor 
-            if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
-                perror("socket creation failed"); 
-                exit(EXIT_FAILURE); 
-            } 
-        
-            memset(&servaddr, 0, sizeof(servaddr)); 
-            
-            // Filling server information 
-            servaddr.sin_family = AF_INET; 
-            servaddr.sin_port = htons(atoi(params->argv[1])); 
-            servaddr.sin_addr.s_addr = INADDR_ANY; 
-            
-            sendto(sockfd, (const char *)msg, strlen(msg), 
-                MSG_CONFIRM, (const struct sockaddr *) &servaddr,  
-                    sizeof(servaddr)); 
-        
-            close(sockfd); 
+            sendto(params->servsockfd, (const char *)msg, strlen(msg), 
+                MSG_CONFIRM, (const struct sockaddr *) &(params->servaddr),  
+                    sizeof(params->servaddr));
+            close(params->servsockfd);  
         }
-       
-    } while(true);
+        pthread_mutex_unlock(&Mutex);
+    } while(1);
     
 }
 void *input_msg(void * ptr) {
     struct thread_params *params = ptr;
     printf("Welcome to lets-talk! Please type your message now\n");
     do {
+        pthread_mutex_lock(&Mutex);
         if(fgets(buffer, 1000, stdin)){
             List_add(params->sending_list, (char *)buffer);
         }
-    } while(true);
+        pthread_mutex_unlock(&Mutex);
+    } while(1);
 }
 
 int main (int argc, char ** argv) 
 {
+    int sender_status;
+    int sender_socketfd;
+    struct addrinfo sender_hints, *senderinfo;  // will point to the results
+
+    memset(&sender_hints, 0, sizeof sender_hints); // make sure the struct is empty
+    sender_hints.ai_family = AF_UNSPEC;     // don't care IPv4 or IPv6
+    sender_hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
+
+    // get ready to connect
+    sender_status = getaddrinfo(argv[2], argv[1], &sender_hints, &senderinfo);
+
+    sender_socketfd = socket(senderinfo->ai_family, senderinfo->ai_socktype, senderinfo->ai_protocol);
+    int receiver_status;
+    int receiver_socketfd;
+    struct addrinfo receiver_hints, *receiverinfo;  // will point to the results
+
+    memset(&receiver_hints, 0, sizeof receiver_hints); // make sure the struct is empty
+    receiver_hints.ai_family = AF_UNSPEC;     // don't care IPv4 or IPv6
+    receiver_hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
+
+    if ((receiver_status = getaddrinfo(argv[2], argv[3], &receiver_hints, &receiverinfo)) != 0) {
+        fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(receiver_status));
+        exit(1);
+    }
+
+    receiver_socketfd = socket(receiverinfo->ai_family, receiverinfo->ai_socktype, receiverinfo->ai_protocol);
+
+    // bind it to the port we passed in to getaddrinfo():
+    bind(receiver_socketfd, receiverinfo->ai_addr, receiverinfo->ai_addrlen);
+
     List * send_list;
     send_list = List_create();
     
     List * receive_list;
     receive_list = List_create();
 
-
     struct thread_params params;
-    params.argc = argc;
-    params.argv = argv;
+    params.senderinfo = senderinfo->ai_addr;
+    params.receiverinfo = receiverinfo->ai_addr;
     params.sending_list = send_list;
     params.receiving_list = receive_list;
 
