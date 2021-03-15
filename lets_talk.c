@@ -26,6 +26,7 @@ struct thread_params {
 
 void *receive_msg(void * ptr) {
     struct thread_params *params = ptr;
+    bool val = 1;
     do {
         char buf[1024];
         socklen_t addr_len;
@@ -38,23 +39,31 @@ void *receive_msg(void * ptr) {
         }
 
         buf[numbytes] = '\0';
-
         List_add(params->receiving_list, (char *) buf);
-    } while(1);
+
+        if(strcmp(buf, "!exit\n") == 0) {
+            val = 0;
+        }
+    } while(val);
     
 }
 void *print_msg(void * ptr) {
     struct thread_params *params = ptr;
+    bool val = 1;
     do {
         if(List_count(params->receiving_list)) {
             char * msg = List_remove(params->receiving_list);
             printf("%s", msg);
+            if(strcmp(msg, "!exit\n") == 0) {
+                val = 0;
+            }
         }
-    }while(1);
+    }while(val);
     
 }
 void *send_msg(void * ptr) {
     struct thread_params *params = ptr;
+    bool val = 1;
     do {
         if(List_count(params->sending_list)) {
             char * msg = List_remove(params->sending_list);
@@ -64,18 +73,26 @@ void *send_msg(void * ptr) {
                 perror("talker: sendto");
                 exit(1);
             }
+            if(strcmp(msg, "!exit\n") == 0) {
+                val = 0;
+            }
+
         }
-    } while(1);
+    } while(val);
     
 }
 void *input_msg(void * ptr) {
     struct thread_params *params = ptr;
     printf("Welcome to lets-talk! Please type your message now\n");
+    bool val = 1;
     do {
         if(fgets(buffer, 1000, stdin)){
             List_add(params->sending_list, (char *)buffer);
         }
-    } while(1);
+        if(strcmp(buffer, "!exit\n") == 0) {
+            val = 0;
+        }
+    } while(val);
 }
 
 int main (int argc, char ** argv) 
@@ -86,7 +103,6 @@ int main (int argc, char ** argv)
     int rv;
     struct sockaddr_storage their_addr;
     
-
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET6; // set to AF_INET to use IPv4
     hints.ai_socktype = SOCK_DGRAM;
