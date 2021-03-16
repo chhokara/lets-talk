@@ -15,6 +15,7 @@
 
 pthread_mutex_t Mutex = PTHREAD_MUTEX_INITIALIZER;
 char buffer[1000];
+int encryption_key = 16;
 struct thread_params {
     int receiver_socketfd;
     int sender_socketfd;
@@ -27,6 +28,7 @@ struct thread_params {
 void *receive_msg(void * ptr) {
     struct thread_params *params = ptr;
     bool val = 1;
+    int i;
     do {
         char buf[1024];
         socklen_t addr_len;
@@ -39,6 +41,11 @@ void *receive_msg(void * ptr) {
         }
 
         buf[numbytes] = '\0';
+        for(i = 0; i < strlen(buf); i++) {
+            if(buf[i] != '\n' && buf[i] != '\0') {
+                buf[i] -= encryption_key;
+            }
+        }
         List_add(params->receiving_list, (char *) buf);
 
         if(strcmp(buf, "!exit\n") == 0) {
@@ -64,9 +71,15 @@ void *print_msg(void * ptr) {
 void *send_msg(void * ptr) {
     struct thread_params *params = ptr;
     bool val = 1;
+    int i;
     do {
         if(List_count(params->sending_list)) {
             char * msg = List_remove(params->sending_list);
+            for(i = 0; i < strlen(msg); i++) {
+                if(msg[i] != '\n' && msg[i] != '\0') {
+                    msg[i] += encryption_key;
+                }
+            }
             int numbytes;
             if ((numbytes = sendto(params->sender_socketfd, msg, strlen(msg), 0,
                 (params->sender_p)->ai_addr, (params->sender_p)->ai_addrlen)) == -1) {
