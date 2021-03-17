@@ -14,22 +14,22 @@
 #include <netdb.h>
 
 pthread_mutex_t Mutex = PTHREAD_MUTEX_INITIALIZER;
+bool term_signal = 1;
 char buffer[1000];
 int encryption_key = 16;
 struct thread_params {
     int receiver_socketfd;
     int sender_socketfd;
     struct sockaddr_storage receiveraddr;
-    struct addrinfo * sender_servinfo, *sender_p;
+    struct addrinfo * sender_servinfo, *sender_p, *receiver_p;
     List * sending_list;
     List * receiving_list;
 };
 
 void *receive_msg(void * ptr) {
     struct thread_params *params = ptr;
-    bool val = 1;
     int i;
-    do {
+    while(term_signal) {
         char buf[1024];
         socklen_t addr_len;
         int numbytes;
@@ -41,40 +41,54 @@ void *receive_msg(void * ptr) {
         }
 
         buf[numbytes] = '\0';
+        
         for(i = 0; i < strlen(buf); i++) {
             if(buf[i] != '\n' && buf[i] != '\0') {
                 buf[i] -= encryption_key;
             }
         }
+        
         List_add(params->receiving_list, (char *) buf);
-
         if(strcmp(buf, "!exit\n") == 0) {
-            val = 0;
+            term_signal = 0;
         }
-    } while(val);
-    
+        if(strcmp(buf, "!status\n") == 0) {
+            int numbytes2;
+            if ((numbytes2 = sendto(params->receiver_socketfd, "Online", strlen("Online"), 0,
+                (params->receiver_p)->ai_addr, (params->receiver_p)->ai_addrlen)) == -1) {
+                perror("talker: sendto");
+                exit(1);
+            }
+            
+        }
+        
+    }
+    pthread_exit(NULL);
+
 }
 void *print_msg(void * ptr) {
     struct thread_params *params = ptr;
     bool val = 1;
-    do {
+    while(val) {
         if(List_count(params->receiving_list)) {
             char * msg = List_remove(params->receiving_list);
             printf("%s", msg);
-            if(strcmp(msg, "!exit\n") == 0) {
-                val = 0;
-            }
+            
         }
-    }while(val);
-    
+    }
+    pthread_exit(NULL);
+
 }
 void *send_msg(void * ptr) {
     struct thread_params *params = ptr;
-    bool val = 1;
     int i;
-    do {
+    while(term_signal) {
         if(List_count(params->sending_list)) {
             char * msg = List_remove(params->sending_list);
+            if(strcmp(msg, "!exit\n") == 0) {
+                term_signal = 0;
+            }
+            
             for(i = 0; i < strlen(msg); i++) {
                 if(msg[i] != '\n' && msg[i] != '\0') {
                     msg[i] += encryption_key;
@@ -86,26 +100,44 @@ void *send_msg(void * ptr) {
                 perror("talker: sendto");
                 exit(1);
             }
-            if(strcmp(msg, "!exit\n") == 0) {
-                val = 0;
+            for(i = 0; i < strlen(msg); i++) {
+                if(msg[i] != '\n' && msg[i] != '\0') {
+                    msg[i] -= encryption_key;
+                }
             }
+            if(strcmp(msg, "!status\n") == 0) {
+                printf("working\n");
+                char buf[1024];
+                socklen_t addr_len;
+                int numbytes2;
+                addr_len = (params->sender_p)->ai_addrlen;
+                if ((numbytes2 = recvfrom(params->sender_socketfd, buf, 1024 , 0,
+                    (struct sockaddr *)&((params->sender_p)->ai_addr), &addr_len)) == -1) {
+                    perror("recvfrom");
+                    exit(1);
+                }
+
+                buf[numbytes2] = '\0';
+                printf("%s", buf);
+            }     
+
+            
 
         }
-    } while(val);
-    
+    }
+    pthread_exit(NULL);
+
 }
 void *input_msg(void * ptr) {
     struct thread_params *params = ptr;
     printf("Welcome to lets-talk! Please type your message now\n");
     bool val = 1;
-    do {
+    while(val) {
         if(fgets(buffer, 1000, stdin)){
             List_add(params->sending_list, (char *)buffer);
         }
-        if(strcmp(buffer, "!exit\n") == 0) {
-            val = 0;
-        }
-    } while(val);
+    } 
+    pthread_exit(NULL);
 }
 
 int main (int argc, char ** argv) 
@@ -187,6 +219,7 @@ int main (int argc, char ** argv)
     receive_list = List_create();
 
     struct thread_params params;
+    params.receiver_p = p;
     params.receiveraddr = their_addr;
     params.receiver_socketfd = sockfd;
     params.sender_socketfd = sender_sockfd;
@@ -203,10 +236,13 @@ int main (int argc, char ** argv)
     pthread_create(&receiving_thr, NULL, receive_msg, &params);
     pthread_create(&printer_thr, NULL, print_msg, &params);
 
-    pthread_join(keyboard_thr, NULL);
-    pthread_join(sending_thr, NULL);
-    pthread_join(receiving_thr, NULL);
-    pthread_join(printer_thr, NULL);
+    // wait for a termination signal from one of the threads
+    while(term_signal);
+    pthread_cancel(keyboard_thr);
+    pthread_cancel(sending_thr);
+    pthread_cancel(receiving_thr);
+    pthread_cancel(printer_thr);
+
 
     return 0;
 }
