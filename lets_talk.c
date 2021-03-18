@@ -42,11 +42,11 @@ void *receive_msg(void * ptr) {
 
         buf[numbytes] = '\0';
         
-        for(i = 0; i < strlen(buf); i++) {
-            if(buf[i] != '\n' && buf[i] != '\0') {
-                buf[i] -= encryption_key;
-            }
-        }
+        // for(i = 0; i < strlen(buf); i++) {
+        //     if(buf[i] != '\n' && buf[i] != '\0') {
+        //         buf[i] -= encryption_key;
+        //     }
+        // }
         
         List_add(params->receiving_list, (char *) buf);
         if(strcmp(buf, "!exit\n") == 0) {
@@ -54,8 +54,9 @@ void *receive_msg(void * ptr) {
         }
         if(strcmp(buf, "!status\n") == 0) {
             int numbytes2;
-            if ((numbytes2 = sendto(params->receiver_socketfd, "Online", strlen("Online"), 0,
-                (params->receiver_p)->ai_addr, (params->receiver_p)->ai_addrlen)) == -1) {
+            char * msg = "Online";
+            if ((numbytes2 = sendto(params->receiver_socketfd, msg, strlen(msg), 0,
+                (struct sockaddr *)&(params->receiveraddr), addr_len)) == -1) {
                 perror("talker: sendto");
                 exit(1);
             }
@@ -89,36 +90,36 @@ void *send_msg(void * ptr) {
                 term_signal = 0;
             }
             
-            for(i = 0; i < strlen(msg); i++) {
-                if(msg[i] != '\n' && msg[i] != '\0') {
-                    msg[i] += encryption_key;
-                }
-            }
+            // for(i = 0; i < strlen(msg); i++) {
+            //     if(msg[i] != '\n' && msg[i] != '\0') {
+            //         msg[i] += encryption_key;
+            //     }
+            // }
             int numbytes;
             if ((numbytes = sendto(params->sender_socketfd, msg, strlen(msg), 0,
                 (params->sender_p)->ai_addr, (params->sender_p)->ai_addrlen)) == -1) {
+                printf("in sender\n");
                 perror("talker: sendto");
                 exit(1);
             }
-            for(i = 0; i < strlen(msg); i++) {
-                if(msg[i] != '\n' && msg[i] != '\0') {
-                    msg[i] -= encryption_key;
-                }
-            }
+            // for(i = 0; i < strlen(msg); i++) {
+            //     if(msg[i] != '\n' && msg[i] != '\0') {
+            //         msg[i] -= encryption_key;
+            //     }
+            // }
             if(strcmp(msg, "!status\n") == 0) {
-                printf("working\n");
                 char buf[1024];
                 socklen_t addr_len;
                 int numbytes2;
                 addr_len = (params->sender_p)->ai_addrlen;
                 if ((numbytes2 = recvfrom(params->sender_socketfd, buf, 1024 , 0,
-                    (struct sockaddr *)&((params->sender_p)->ai_addr), &addr_len)) == -1) {
+                    (params->sender_p)->ai_addr, &addr_len)) == -1) {
                     perror("recvfrom");
                     exit(1);
                 }
 
                 buf[numbytes2] = '\0';
-                printf("%s", buf);
+                printf("%s\n", buf);
             }     
 
             
