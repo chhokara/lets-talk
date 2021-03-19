@@ -7,11 +7,11 @@
 #include <sys/socket.h> 
 #include <arpa/inet.h> 
 #include <netinet/in.h> 
-#include "list.c"
 #include "list.h"
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <sys/time.h>
 
 pthread_mutex_t Mutex = PTHREAD_MUTEX_INITIALIZER;
 bool term_signal = 1;
@@ -29,7 +29,7 @@ struct thread_params {
 void *receive_msg(void * ptr) {
     struct thread_params *params = ptr;
     int i;
-    while(term_signal) {
+    while(1) {
         char buf[1024];
         socklen_t addr_len;
         int numbytes;
@@ -47,7 +47,7 @@ void *receive_msg(void * ptr) {
         //         buf[i] -= encryption_key;
         //     }
         // }
-        
+
         List_add(params->receiving_list, (char *) buf);
         if(strcmp(buf, "!exit\n") == 0) {
             term_signal = 0;
@@ -61,20 +61,18 @@ void *receive_msg(void * ptr) {
                 exit(1);
             }
             
-        }
-        
+        }        
     }
     pthread_exit(NULL);
 
 }
 void *print_msg(void * ptr) {
     struct thread_params *params = ptr;
-    bool val = 1;
-    while(val) {
+    while(1) {
         if(List_count(params->receiving_list)) {
-            char * msg = List_remove(params->receiving_list);
+            char * msg = List_remove(params->receiving_list);  
             printf("%s", msg);
-            
+            fflush(stdout);
         }
     }
     pthread_exit(NULL);
@@ -83,12 +81,9 @@ void *print_msg(void * ptr) {
 void *send_msg(void * ptr) {
     struct thread_params *params = ptr;
     int i;
-    while(term_signal) {
+    while(1) {
         if(List_count(params->sending_list)) {
             char * msg = List_remove(params->sending_list);
-            if(strcmp(msg, "!exit\n") == 0) {
-                term_signal = 0;
-            }
             
             // for(i = 0; i < strlen(msg); i++) {
             //     if(msg[i] != '\n' && msg[i] != '\0') {
@@ -98,7 +93,6 @@ void *send_msg(void * ptr) {
             int numbytes;
             if ((numbytes = sendto(params->sender_socketfd, msg, strlen(msg), 0,
                 (params->sender_p)->ai_addr, (params->sender_p)->ai_addrlen)) == -1) {
-                printf("in sender\n");
                 perror("talker: sendto");
                 exit(1);
             }
@@ -107,23 +101,30 @@ void *send_msg(void * ptr) {
             //         msg[i] -= encryption_key;
             //     }
             // }
+            if(strcmp(msg, "!exit\n") == 0) {
+                term_signal = 0;
+            }
             if(strcmp(msg, "!status\n") == 0) {
                 char buf[1024];
                 socklen_t addr_len;
                 int numbytes2;
                 addr_len = (params->sender_p)->ai_addrlen;
+                struct timeval tv;
+                tv.tv_sec = 0;
+                tv.tv_usec = 100000;
+                if (setsockopt(params->sender_socketfd, SOL_SOCKET, SO_RCVTIMEO,&tv,sizeof(tv)) < 0) {
+                    perror("Error");
+                }
                 if ((numbytes2 = recvfrom(params->sender_socketfd, buf, 1024 , 0,
                     (params->sender_p)->ai_addr, &addr_len)) == -1) {
-                    perror("recvfrom");
+                    printf("Offline\n");
+                    //perror("recvfrom");
                     exit(1);
                 }
 
                 buf[numbytes2] = '\0';
                 printf("%s\n", buf);
             }     
-
-            
-
         }
     }
     pthread_exit(NULL);
@@ -132,8 +133,7 @@ void *send_msg(void * ptr) {
 void *input_msg(void * ptr) {
     struct thread_params *params = ptr;
     printf("Welcome to lets-talk! Please type your message now\n");
-    bool val = 1;
-    while(val) {
+    while(1) {
         if(fgets(buffer, 1000, stdin)){
             List_add(params->sending_list, (char *)buffer);
         }
@@ -180,8 +180,6 @@ int main (int argc, char ** argv)
         fprintf(stderr, "listener: failed to bind socket\n");
         return 2;
     }
-
-    freeaddrinfo(servinfo);
 
     //SENDER
     int sender_sockfd;
@@ -237,13 +235,11 @@ int main (int argc, char ** argv)
     pthread_create(&receiving_thr, NULL, receive_msg, &params);
     pthread_create(&printer_thr, NULL, print_msg, &params);
 
-    // wait for a termination signal from one of the threads
     while(term_signal);
     pthread_cancel(keyboard_thr);
     pthread_cancel(sending_thr);
     pthread_cancel(receiving_thr);
     pthread_cancel(printer_thr);
-
 
     return 0;
 }
