@@ -4,3 +4,6 @@ all: lets_talk.c
 
 clean:
 	$(RM) lets_talk
+
+valgrind: 
+	valgrind --leak-check=full ./lets_talk 3000 localhost 3001

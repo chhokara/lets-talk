@@ -71,7 +71,7 @@ void *print_msg(void * ptr) {
         if(List_count(params->receiving_list)) {
             char * msg = List_remove(params->receiving_list);  
             printf("%s", msg);
-            // fflush(stdout);
+            fflush(stdout);
             if(strcmp(msg, "!exit\n") == 0) {
                 term_signal = 0;
             }
@@ -103,7 +103,7 @@ void *send_msg(void * ptr) {
                     msg[i] -= encryption_key;
                 }
             }
-            if(strcmp(buffer, "!exit\n") == 0) {
+            if(strcmp(msg, "!exit\n") == 0) {
                 term_signal = 0;
             }
             if(strcmp(msg, "!status\n") == 0) {
