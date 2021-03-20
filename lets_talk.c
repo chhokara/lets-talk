@@ -119,13 +119,14 @@ void *send_msg(void * ptr) {
                 }
                 if ((numbytes2 = recvfrom(params->sender_socketfd, buf, 4000 , 0,
                     (params->sender_p)->ai_addr, &addr_len)) == -1) {
+                    strcpy(buf, "Offline");
                     printf("Offline\n");
-                    //perror("recvfrom");
-                    exit(1);
                 }
-
-                buf[numbytes2] = '\0';
-                printf("%s\n", buf);
+                if(strcmp(buf, "Online") == 0) {
+                    buf[numbytes2] = '\0';
+                    printf("%s\n", buf);
+                }
+                
             }     
         }
     }
