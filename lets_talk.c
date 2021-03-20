@@ -16,7 +16,7 @@
 
 pthread_mutex_t Mutex = PTHREAD_MUTEX_INITIALIZER;
 bool term_signal = 1;
-char buffer[1000];
+char buffer[4000];
 int encryption_key = 1;
 struct thread_params {
     int receiver_socketfd;
@@ -31,18 +31,18 @@ void *receive_msg(void * ptr) {
     struct thread_params *params = ptr;
     int i;
     while(term_signal) {
-        char buf[1024];
+        char buf[4000];
         socklen_t addr_len;
         int numbytes;
         addr_len = sizeof params->receiveraddr;
-        if ((numbytes = recvfrom(params->receiver_socketfd, buf, 1024 , 0,
+        if ((numbytes = recvfrom(params->receiver_socketfd, buf, 4000 , 0,
             (struct sockaddr *)&(params->receiveraddr), &addr_len)) == -1) {
             perror("recvfrom");
             exit(1);
         }
 
         buf[numbytes] = '\0';
-        
+        // decryption
         for(i = 0; i < strlen(buf); i++) {
             if(buf[i] != '\n' && buf[i] != '\0') {
                 buf[i] -= encryption_key;
@@ -86,7 +86,7 @@ void *send_msg(void * ptr) {
     while(term_signal) {
         if(List_count(params->sending_list)) {
             char * msg = List_remove(params->sending_list);
-            
+            // encryption
             for(i = 0; i < strlen(msg); i++) {
                 if(msg[i] != '\n' && msg[i] != '\0') {
                     msg[i] += encryption_key;
@@ -107,7 +107,7 @@ void *send_msg(void * ptr) {
                 term_signal = 0;
             }
             if(strcmp(msg, "!status\n") == 0) {
-                char buf[1024];
+                char buf[4000];
                 socklen_t addr_len;
                 int numbytes2;
                 addr_len = (params->sender_p)->ai_addrlen;
@@ -117,7 +117,7 @@ void *send_msg(void * ptr) {
                 if (setsockopt(params->sender_socketfd, SOL_SOCKET, SO_RCVTIMEO,&tv,sizeof(tv)) < 0) {
                     perror("Error");
                 }
-                if ((numbytes2 = recvfrom(params->sender_socketfd, buf, 1024 , 0,
+                if ((numbytes2 = recvfrom(params->sender_socketfd, buf, 4000 , 0,
                     (params->sender_p)->ai_addr, &addr_len)) == -1) {
                     printf("Offline\n");
                     //perror("recvfrom");
@@ -136,7 +136,7 @@ void *input_msg(void * ptr) {
     struct thread_params *params = ptr;
     printf("Welcome to lets-talk! Please type your message now\n");
     while(term_signal) {
-        if(fgets(buffer, 1000, stdin)){
+        if(fgets(buffer, 4000, stdin)){
             List_add(params->sending_list, (char *)buffer);
         }
     } 
