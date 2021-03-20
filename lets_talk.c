@@ -12,11 +12,12 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <sys/time.h>
+#define STDIN 0 
 
 pthread_mutex_t Mutex = PTHREAD_MUTEX_INITIALIZER;
 bool term_signal = 1;
 char buffer[1000];
-int encryption_key = 16;
+int encryption_key = 1;
 struct thread_params {
     int receiver_socketfd;
     int sender_socketfd;
@@ -29,7 +30,7 @@ struct thread_params {
 void *receive_msg(void * ptr) {
     struct thread_params *params = ptr;
     int i;
-    while(1) {
+    while(term_signal) {
         char buf[1024];
         socklen_t addr_len;
         int numbytes;
@@ -42,16 +43,14 @@ void *receive_msg(void * ptr) {
 
         buf[numbytes] = '\0';
         
-        // for(i = 0; i < strlen(buf); i++) {
-        //     if(buf[i] != '\n' && buf[i] != '\0') {
-        //         buf[i] -= encryption_key;
-        //     }
-        // }
+        for(i = 0; i < strlen(buf); i++) {
+            if(buf[i] != '\n' && buf[i] != '\0') {
+                buf[i] -= encryption_key;
+            }
+        }
 
         List_add(params->receiving_list, (char *) buf);
-        if(strcmp(buf, "!exit\n") == 0) {
-            term_signal = 0;
-        }
+        
         if(strcmp(buf, "!status\n") == 0) {
             int numbytes2;
             char * msg = "Online";
@@ -68,11 +67,14 @@ void *receive_msg(void * ptr) {
 }
 void *print_msg(void * ptr) {
     struct thread_params *params = ptr;
-    while(1) {
+    while(term_signal) {
         if(List_count(params->receiving_list)) {
             char * msg = List_remove(params->receiving_list);  
             printf("%s", msg);
-            fflush(stdout);
+            // fflush(stdout);
+            if(strcmp(msg, "!exit\n") == 0) {
+                term_signal = 0;
+            }
         }
     }
     pthread_exit(NULL);
@@ -81,27 +83,27 @@ void *print_msg(void * ptr) {
 void *send_msg(void * ptr) {
     struct thread_params *params = ptr;
     int i;
-    while(1) {
+    while(term_signal) {
         if(List_count(params->sending_list)) {
             char * msg = List_remove(params->sending_list);
             
-            // for(i = 0; i < strlen(msg); i++) {
-            //     if(msg[i] != '\n' && msg[i] != '\0') {
-            //         msg[i] += encryption_key;
-            //     }
-            // }
+            for(i = 0; i < strlen(msg); i++) {
+                if(msg[i] != '\n' && msg[i] != '\0') {
+                    msg[i] += encryption_key;
+                }
+            }
             int numbytes;
             if ((numbytes = sendto(params->sender_socketfd, msg, strlen(msg), 0,
                 (params->sender_p)->ai_addr, (params->sender_p)->ai_addrlen)) == -1) {
                 perror("talker: sendto");
                 exit(1);
             }
-            // for(i = 0; i < strlen(msg); i++) {
-            //     if(msg[i] != '\n' && msg[i] != '\0') {
-            //         msg[i] -= encryption_key;
-            //     }
-            // }
-            if(strcmp(msg, "!exit\n") == 0) {
+            for(i = 0; i < strlen(msg); i++) {
+                if(msg[i] != '\n' && msg[i] != '\0') {
+                    msg[i] -= encryption_key;
+                }
+            }
+            if(strcmp(buffer, "!exit\n") == 0) {
                 term_signal = 0;
             }
             if(strcmp(msg, "!status\n") == 0) {
@@ -133,7 +135,7 @@ void *send_msg(void * ptr) {
 void *input_msg(void * ptr) {
     struct thread_params *params = ptr;
     printf("Welcome to lets-talk! Please type your message now\n");
-    while(1) {
+    while(term_signal) {
         if(fgets(buffer, 1000, stdin)){
             List_add(params->sending_list, (char *)buffer);
         }
@@ -155,6 +157,7 @@ int main (int argc, char ** argv)
     hints.ai_flags = AI_PASSIVE; // use my IP
 
     if ((rv = getaddrinfo(NULL, argv[1], &hints, &servinfo)) != 0) {
+        freeaddrinfo(servinfo);
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }
@@ -177,6 +180,7 @@ int main (int argc, char ** argv)
     }
 
     if (p == NULL) {
+        freeaddrinfo(servinfo);
         fprintf(stderr, "listener: failed to bind socket\n");
         return 2;
     }
@@ -191,7 +195,8 @@ int main (int argc, char ** argv)
     sender_hints.ai_socktype = SOCK_DGRAM;
 
     if ((sender_rv = getaddrinfo(argv[2], argv[3], &sender_hints, &sender_servinfo)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        freeaddrinfo(sender_servinfo);
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(sender_rv));
         return 1;
     }
 
@@ -207,6 +212,7 @@ int main (int argc, char ** argv)
     }
 
     if (sender_p == NULL) {
+        freeaddrinfo(sender_servinfo);
         fprintf(stderr, "talker: failed to create socket\n");
         return 2;
     }
@@ -241,5 +247,13 @@ int main (int argc, char ** argv)
     pthread_cancel(receiving_thr);
     pthread_cancel(printer_thr);
 
-    return 0;
+    pthread_join(keyboard_thr, NULL);
+    pthread_join(sending_thr, NULL);
+    pthread_join(receiving_thr, NULL);
+    pthread_join(printer_thr, NULL);
+
+    freeaddrinfo(servinfo);
+    freeaddrinfo(sender_servinfo);
+
+    pthread_exit(0);
 }
